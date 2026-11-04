@@ -1,5 +1,8 @@
 小发发视频封面｜同事使用说明
 
+从上一版更新
+已装过此技能的同事，解压新版后可直接告诉 Codex：“用这里的 little-fafa-video-cover 更新我已安装的同名技能，保留 assets 里已有的优设标题黑。”更新后新开一个对话制作封面。
+
 第一次设置
 1. 解压收到的 ZIP，找到 little-fafa-video-cover 文件夹。打开它应当直接看到 SKILL.md、agents、assets 和 scripts。
 2. 从优设官网下载「优设标题黑」，解压字体包，把其中的字体文件放进 little-fafa-video-cover 的 assets 文件夹。字体只需准备一次。

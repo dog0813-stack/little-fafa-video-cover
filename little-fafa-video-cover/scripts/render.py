@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
@@ -32,7 +33,7 @@ class Slot:
 # Coordinates are in the layered Photoshop original, before the black bars.
 SLOTS = {
     "opinion": {
-        "top": Slot(158.24, 627.57, 547.87, 499.96, -.075, 24, "white", "black", (3340, 2820)),
+        "top": Slot(158.24, 627.57, 547.87, 499.96, -.075, 24, "white", "black", (3340, 2820, 1780)),
         "main": Slot(2250.80, 4943.18, 585.93, 534.68, -.05, 101, PINK, "white", (4250, 4250), True),
     },
     "contrast": {
@@ -102,6 +103,17 @@ def layout_lines(lines, slot, font_file):
     raise ValueError("文字超出模板范围。请按语义重新断行，若需删改已定文案，请先向用户确认。")
 
 
+def round_outline(mask, radius):
+    """Expand the merged ink, including into narrow counters in the typeface."""
+    solid = mask.point(lambda value: 255 if value >= 128 else 0)
+    boundary = ImageChops.subtract(solid, solid.filter(ImageFilter.MinFilter(3)))
+    draw = ImageDraw.Draw(solid)
+    for point in re.finditer(b"\xff", boundary.tobytes()):
+        y, x = divmod(point.start(), mask.width)
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=255)
+    return solid.filter(ImageFilter.GaussianBlur(.55))
+
+
 def draw_slot(canvas, slot, lines, font_file, layout):
     font, stroke, rows = layout_lines(lines, slot, font_file)
     tofu = bytes(font.getmask(chr(0x10ffff)))
@@ -112,20 +124,18 @@ def draw_slot(canvas, slot, lines, font_file, layout):
     top = max(0, rows[0][0] - font.size - margin)
     bottom = min(HEIGHT, rows[-1][0] + round(font.size * .3) + margin)
     mask = Image.new("L", (WIDTH, bottom - top))
-    edge = Image.new("L", mask.size)
-    fill_draw, edge_draw = ImageDraw.Draw(mask), ImageDraw.Draw(edge)
+    fill_draw = ImageDraw.Draw(mask)
     for baseline, positions in rows:
         for char, x in positions:
             xy = x, baseline - top
-            if stroke:
-                edge_draw.text(xy, char, font=font, anchor="ls", fill=255, stroke_width=stroke, stroke_fill=255)
             fill_draw.text(xy, char, font=font, anchor="ls", fill=255)
     region = canvas.crop((0, top, WIDTH, bottom))
-    if slot.centered:
-        glow = edge.filter(ImageFilter.GaussianBlur(75)).point(lambda v: v * .17)
-        region.paste("#fff0a3" if layout == "contrast" else "black", (0, 0), glow)
     if stroke:
-        region.paste(slot.edge, (0, 0), ImageChops.lighter(edge, mask))
+        edge = round_outline(mask, stroke)
+        if slot.centered:
+            glow = edge.filter(ImageFilter.GaussianBlur(75)).point(lambda v: v * .17)
+            region.paste("#fff0a3" if layout == "contrast" else "black", (0, 0), glow)
+        region.paste(slot.edge, (0, 0), edge)
     region.paste(slot.fill, (0, 0), mask)
     canvas.paste(region, (0, top))
 
