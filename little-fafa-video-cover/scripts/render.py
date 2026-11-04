@@ -1,4 +1,4 @@
-"""Render the two calibrated cover layouts. Input is a UTF-8 JSON file."""
+"""Render a calibrated cover layout from a UTF-8 JSON file."""
 
 import argparse
 import json
@@ -51,6 +51,10 @@ SLOTS["opinion-large"] = {
     "main": Slot(WIDTH / 2, 4598, 1130, 960, -.052, 87, PINK, "white",
                  (4234, 4234), centered=True, center_ink=True),
 }
+SLOTS["opinion-equal"] = {
+    "top": SLOTS["opinion"]["top"],
+    "main": Slot(0, 5558, 905, 780, -.052, 70, PINK, "white", (4234, 4234)),
+}
 
 
 def get_font_file(given):
@@ -75,11 +79,15 @@ def glyph_positions(line, font, slot):
         start += advance
 
 
-def layout_lines(lines, slot, font_file):
+def validate_lines(lines, slot):
     if (not isinstance(lines, list) or not 1 <= len(lines) <= len(slot.limits)
             or not all(isinstance(s, str) and s.strip() and len(s) <= 48
                        and not any(ord(c) < 32 for c in s) for s in lines)):
         raise ValueError("每个文字区须提供分行后的非空短句，请核对行数和文案长度。")
+
+
+def layout_lines(lines, slot, font_file):
+    validate_lines(lines, slot)
     for percent in range(100, 66, -1):
         scale = percent / 100
         font = ImageFont.truetype(str(font_file), round(slot.size * scale))
@@ -128,12 +136,65 @@ def round_outline(mask, radius):
     return solid.filter(ImageFilter.GaussianBlur(.55))
 
 
-def draw_slot(canvas, slot, lines, font_file, layout):
-    font, stroke, rows = layout_lines(lines, slot, font_file)
+def check_glyphs(font, lines):
     tofu = bytes(font.getmask(chr(0x10ffff)))
     for char in set("".join(lines).replace(" ", "")):
         if bytes(font.getmask(char)) == tofu:
             raise ValueError(f"原字体缺少字形「{char}」，请核对。")
+
+
+def paint_text(canvas, mask, top, slot, stroke, glow_color=None):
+    region = canvas.crop((0, top, WIDTH, top + mask.height))
+    if stroke:
+        edge = round_outline(mask, stroke)
+        if glow_color:
+            glow = edge.filter(ImageFilter.GaussianBlur(75)).point(lambda v: v * .17)
+            region.paste(glow_color, (0, 0), glow)
+        region.paste(slot.edge, (0, 0), edge)
+    region.paste(slot.fill, (0, 0), mask)
+    canvas.paste(region, (0, top))
+
+
+def draw_equal_headline(canvas, slot, lines, font_file):
+    validate_lines(lines, slot)
+    font = ImageFont.truetype(str(font_file), int(slot.size))
+    check_glyphs(font, lines)
+    side_margin = WIDTH - slot.limits[0]
+    max_width = WIDTH - 2 * (side_margin + slot.stroke)
+    bands = []
+    for line in lines:
+        positions = list(glyph_positions(line, font, slot))
+        boxes = [font.getbbox(char, anchor="ls") for char, _ in positions]
+        left = min(x + b[0] for (_, x), b in zip(positions, boxes))
+        right = max(x + b[2] for (_, x), b in zip(positions, boxes))
+        top = min(b[1] for b in boxes)
+        bottom = max(b[3] for b in boxes)
+        band = Image.new("L", (right - left, bottom - top))
+        draw = ImageDraw.Draw(band)
+        for char, x in positions:
+            draw.text((x - left, -top), char, anchor="ls", font=font, fill=255)
+        ink = band.getbbox()
+        if not ink:
+            raise ValueError("主标题含空行或不可见字符。")
+        bands.append((band.crop(ink), top + ink[1]))
+
+    # Fit the longest line once. Both lines keep the same type height and width ratio.
+    factor = min(1.0, max_width / max(band.width for band, _ in bands))
+    if factor < .72:
+        raise ValueError("主标题过长，请按语义重新断行。")
+    top = 3600
+    mask = Image.new("L", (WIDTH, HEIGHT - top))
+    for row, (band, dy) in enumerate(bands):
+        if factor < 1:
+            band = band.resize((max(1, round(band.width * factor)), band.height), Image.Resampling.LANCZOS)
+        baseline = slot.baseline - (len(bands) - row - 1) * slot.leading
+        mask.paste(band, ((WIDTH - band.width) // 2, int(baseline) + dy - top))
+    paint_text(canvas, mask, top, slot, slot.stroke, "black")
+
+
+def draw_slot(canvas, slot, lines, font_file, layout):
+    font, stroke, rows = layout_lines(lines, slot, font_file)
+    check_glyphs(font, lines)
     margin = stroke + (260 if slot.centered else 5)
     top = max(0, rows[0][0] - font.size - margin)
     bottom = min(HEIGHT, rows[-1][0] + round(font.size * .3) + margin)
@@ -143,22 +204,17 @@ def draw_slot(canvas, slot, lines, font_file, layout):
         for char, x in positions:
             xy = x, baseline - top
             fill_draw.text(xy, char, font=font, anchor="ls", fill=255)
-    region = canvas.crop((0, top, WIDTH, bottom))
-    if stroke:
-        edge = round_outline(mask, stroke)
-        if slot.centered:
-            glow = edge.filter(ImageFilter.GaussianBlur(75)).point(lambda v: v * .17)
-            region.paste("#fff0a3" if layout == "contrast" else "black", (0, 0), glow)
-        region.paste(slot.edge, (0, 0), edge)
-    region.paste(slot.fill, (0, 0), mask)
-    canvas.paste(region, (0, top))
+    glow_color = None
+    if slot.centered:
+        glow_color = "#fff0a3" if layout == "contrast" else "black"
+    paint_text(canvas, mask, top, slot, stroke, glow_color)
     return top + mask.getbbox()[1] - stroke, font.size
 
 
 def render(data, font_file, output):
-    layout = data.get("layout", "opinion-large")
+    layout = data.get("layout", "opinion-large" if "lead" in data else "opinion-equal")
     if layout not in SLOTS:
-        raise ValueError("layout 应为 opinion、opinion-large 或 contrast。")
+        raise ValueError(f"layout 应为 {', '.join(SLOTS)}。")
     fields = set(data) - {"layout"}
     expected = set(SLOTS[layout])
     has_lead = layout == "opinion-large" and "lead" in data
@@ -176,12 +232,15 @@ def render(data, font_file, output):
     if canvas.size != (WIDTH, HEIGHT):
         raise ValueError("底图尺寸与模板不符。")
     for name, slot in SLOTS[layout].items():
+        if layout == "opinion-equal" and name == "main":
+            draw_equal_headline(canvas, slot, data[name], font_file)
+            continue
         ink_top, actual_size = draw_slot(canvas, slot, data[name], font_file, layout)
         if has_lead and name == "main":
             lead = replace(slot, size=round(actual_size * .47), baseline=ink_top - 108,
                            stroke=round(actual_size * .043), limits=(4000,))
             draw_slot(canvas, lead, [data["lead"]], font_file, layout)
-    if layout in ("opinion", "opinion-large"):
+    if layout != "contrast":
         with Image.open(ASSETS / "accent.png") as accent:
             canvas.paste(accent, (3382, 169), accent.getchannel("A"))
     full = Image.new("RGB", (4500, 8000), "black")
