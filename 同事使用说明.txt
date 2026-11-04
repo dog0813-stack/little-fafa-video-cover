@@ -1,5 +1,9 @@
 小发发视频封面｜同事使用说明
 
+从 GitHub 安装
+把这一句话粘贴到 Codex 即可，无需 GitHub 账号或仓库邀请。
+请从 https://github.com/dog0813-stack/little-fafa-video-cover 安装「小发发视频封面」，按仓库首页配好字体和出图环境，再试做一张封面确认能用。
+
 从上一版更新
 已装过此技能的同事，解压新版后可直接告诉 Codex：“用这里的 little-fafa-video-cover 更新我已安装的同名技能，保留 assets 里已有的优设标题黑。”更新后新开一个对话制作封面。
 
