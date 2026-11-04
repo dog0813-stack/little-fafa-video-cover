@@ -4,7 +4,7 @@ import argparse
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -28,6 +28,7 @@ class Slot:
     edge: str
     limits: tuple
     centered: bool = False
+    center_ink: bool = False
 
 
 # Coordinates are in the layered Photoshop original, before the black bars.
@@ -41,6 +42,14 @@ SLOTS = {
         "middle": Slot(136.86, 1759.86, 296.45, 270.53, -.05, 13, PINK, "white", (1810, 1810, 1810)),
         "main": Slot(2174.55, 4822.65, 906.57, 827.29, -.05, 73, PINK, "white", (4250, 4250), True),
     },
+}
+
+# The large edition reserves the lower part of the photo for the hook.
+# Center its actual ink so punctuation cannot shift short lines off center.
+SLOTS["opinion-large"] = {
+    "top": SLOTS["opinion"]["top"],
+    "main": Slot(WIDTH / 2, 4598, 1130, 960, -.052, 87, PINK, "white",
+                 (4234, 4234), centered=True, center_ink=True),
 }
 
 
@@ -95,6 +104,11 @@ def layout_lines(lines, slot, font_file):
                 raise ValueError("请检查是否输入了不可见字符。")
             left = min(a for a, _ in spans) - stroke
             right = max(b for _, b in spans) + stroke
+            if slot.center_ink:
+                offset = round(slot.x - (left + right) / 2)
+                positions = [(char, x + offset) for char, x in positions]
+                left += offset
+                right += offset
             if left < 8 or right > slot.limits[index]:
                 break
             rows.append((round(y), positions))
@@ -138,13 +152,16 @@ def draw_slot(canvas, slot, lines, font_file, layout):
         region.paste(slot.edge, (0, 0), edge)
     region.paste(slot.fill, (0, 0), mask)
     canvas.paste(region, (0, top))
+    return top + mask.getbbox()[1] - stroke, font.size
 
 
 def render(data, font_file, output):
     layout = data.get("layout")
     if layout not in SLOTS:
-        raise ValueError("layout 应为 opinion（观点款）或 contrast（对比款）。")
-    if set(data) != {"layout", *SLOTS[layout]}:
+        raise ValueError("layout 应为 opinion、opinion-large 或 contrast。")
+    required = {"layout", *SLOTS[layout]}
+    has_lead = layout == "opinion-large" and "lead" in data
+    if set(data) != (required | {"lead"} if has_lead else required):
         raise ValueError(f"本款需要文字区 {', '.join(SLOTS[layout])}。")
     if output.suffix.lower() != ".png":
         raise ValueError("高清封面请以 .png 保存。")
@@ -156,8 +173,12 @@ def render(data, font_file, output):
     if canvas.size != (WIDTH, HEIGHT):
         raise ValueError("底图尺寸与模板不符。")
     for name, slot in SLOTS[layout].items():
-        draw_slot(canvas, slot, data[name], font_file, layout)
-    if layout == "opinion":
+        ink_top, actual_size = draw_slot(canvas, slot, data[name], font_file, layout)
+        if has_lead and name == "main":
+            lead = replace(slot, size=round(actual_size * .47), baseline=ink_top - 108,
+                           stroke=round(actual_size * .043), limits=(4000,))
+            draw_slot(canvas, lead, [data["lead"]], font_file, layout)
+    if layout in ("opinion", "opinion-large"):
         with Image.open(ASSETS / "accent.png") as accent:
             canvas.paste(accent, (3382, 169), accent.getchannel("A"))
     full = Image.new("RGB", (4500, 8000), "black")
