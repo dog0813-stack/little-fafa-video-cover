@@ -156,12 +156,15 @@ def draw_slot(canvas, slot, lines, font_file, layout):
 
 
 def render(data, font_file, output):
-    layout = data.get("layout")
+    layout = data.get("layout", "opinion-large")
     if layout not in SLOTS:
         raise ValueError("layout 应为 opinion、opinion-large 或 contrast。")
-    required = {"layout", *SLOTS[layout]}
+    fields = set(data) - {"layout"}
+    expected = set(SLOTS[layout])
     has_lead = layout == "opinion-large" and "lead" in data
-    if set(data) != (required | {"lead"} if has_lead else required):
+    if has_lead:
+        expected.add("lead")
+    if fields != expected:
         raise ValueError(f"本款需要文字区 {', '.join(SLOTS[layout])}。")
     if output.suffix.lower() != ".png":
         raise ValueError("高清封面请以 .png 保存。")

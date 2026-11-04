@@ -2,7 +2,7 @@
 
 从 GitHub 安装
 把这一句话粘贴到 Codex 即可，无需 GitHub 账号或仓库邀请。
-请从 https://github.com/dog0813-stack/little-fafa-video-cover 安装「小发发视频封面」，按仓库首页配好字体和出图环境，再试做一张封面确认能用。
+请从 https://github.com/dog0813-stack/little-fafa-video-cover 安装或更新「小发发视频封面」，按仓库首页配好字体和出图环境，再试做一张大标题封面。
 
 从上一版更新
 已装过此技能的同事，解压新版后可直接告诉 Codex：“用这里的 little-fafa-video-cover 更新我已安装的同名技能，保留 assets 里已有的优设标题黑。”更新后新开一个对话制作封面。
@@ -17,4 +17,4 @@
 如果手动安装，把整个 little-fafa-video-cover 文件夹复制到个人技能目录中。Windows 默认为 %USERPROFILE%\.codex\skills\，macOS 默认为 ~/.codex/skills/。如果已设置 CODEX_HOME，两个系统都使用该目录下的 skills 文件夹。
 
 日常出图
-在下一条消息中输入「用 $little-fafa-video-cover 做这期封面」，换行粘贴口播稿即可。如果标题已经定稿，可以加一句「上下标题按我给的原文排」，再分别写上标题文字。
+在下一条消息中输入「做这期小发发视频封面」，换行粘贴口播稿或定稿的主副标题即可。默认采用大标题版式，称呼单排、核心短句放大。需要其他版式时可以明确写「原观点款」或「对比款」。
